@@ -44,7 +44,18 @@ const deleteContact = (nama) => {
   const filterContacts = contacts.filter(
     (contact) => contact.nama.toLowerCase() !== nama.toLowerCase()
   );
-  fs.writeFileSync(filePath, JSON.stringify(filterContacts));
+  writeFile(filterContacts);
+};
+
+const updateContact = (newContact) => {
+  const contacts = loadContactData();
+
+  const filterContacts = contacts.filter(
+    (contact) => contact.nama.toLowerCase() !== newContact.oldName.toLowerCase()
+  );
+  delete newContact.oldName;
+  filterContacts.push(newContact);
+  writeFile(filterContacts);
 };
 
 module.exports = {
@@ -53,4 +64,5 @@ module.exports = {
   addContact,
   duplicateName,
   deleteContact,
+  updateContact,
 };

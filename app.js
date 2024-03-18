@@ -14,6 +14,7 @@ const {
   addContact,
   duplicateName,
   deleteContact,
+  updateContact,
 } = require("./utils/contacts");
 
 // Using view templating engine
@@ -119,6 +120,61 @@ app.get("/contact/delete/:nama", (req, res, next) => {
 
   next();
 });
+
+app.get("/contact/edit/:nama", (req, res, next) => {
+  const contactsData = loadContactData();
+  const contacts = findContactByNama(contactsData, req.params.nama);
+
+  // Contacts not found
+  if (!contacts) next();
+
+  res.render("edit", {
+    layout: "layouts/main-layout",
+    contacts,
+    fullName: contacts.nama.split(/[ ,]+/),
+  });
+});
+
+app.post(
+  "/contact/update",
+  [
+    body("fullName").custom((value) => {
+      const duplicate = duplicateName(value);
+      if (duplicate) {
+        throw new Error("Name is already used!");
+      }
+
+      return true;
+    }),
+    check("email", "Email is not valid!").isEmail(),
+    check("noHP", "Phone Number is not valid!").isMobilePhone("id-ID"),
+  ],
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (req.body.fullName !== req.body.oldName) {
+      if (!errors.isEmpty()) {
+        return res.render("edit", {
+          layout: "layouts/main-layout",
+          errors: errors.array(),
+          contacts: req.body,
+          fullName:
+            req.body.oldName.split(/[ ,]+/) || req.body.fullName.split(/[ ,]+/),
+        });
+      }
+    }
+
+    const body = {
+      oldName: req.body.oldName,
+      nama: `${req.body.fName} ${req.body.lName}`,
+      noHP: req.body.noHP,
+      email: req.body.email,
+    };
+
+    updateContact(body);
+    req.flash("info", "Data has been updated.");
+    res.redirect("/contact");
+  }
+);
 
 app.get("/contact/:nama", (req, res, next) => {
   const contactsData = loadContactData();
