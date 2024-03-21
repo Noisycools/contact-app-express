@@ -1,32 +1,32 @@
-const express = require("express");
-const expressLayouts = require("express-ejs-layouts");
-const { body, validationResult, check } = require("express-validator");
-const app = express();
-const port = 3000;
+const express = require("express")
+const methodOverride = require('method-override')
+const expressLayouts = require("express-ejs-layouts")
+const { body, validationResult, check } = require("express-validator")
+const app = express()
+const port = 3000
 
-const session = require("express-session");
-const cookieParser = require("cookie-parser");
-const flash = require("connect-flash");
+// Database
+require('./utils/db')
+const Contact = require('./model/contacts')
 
-const {
-  loadContactData,
-  findContactByNama,
-  addContact,
-  duplicateName,
-  deleteContact,
-  updateContact,
-} = require("./utils/contacts");
+// Session and Cookies
+const session = require("express-session")
+const cookieParser = require("cookie-parser")
+const flash = require("connect-flash")
 
 // Using view templating engine
-app.set("view engine", "ejs");
-app.use(expressLayouts);
+app.set("view engine", "ejs")
+app.use(expressLayouts)
 
 // Built-in Middleware
-app.use(express.static("public"));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"))
+app.use(express.urlencoded({ extended: true }))
+
+// override with POST having ?_method=DELETE
+app.use(methodOverride('_method'))
 
 // Flash Data Configuration
-app.use(cookieParser("secret"));
+app.use(cookieParser("secret"))
 app.use(
   session({
     secret: "secret",
@@ -34,123 +34,116 @@ app.use(
     saveUninitialized: true,
     cookie: { maxAge: 6000 },
   })
-);
-app.use(flash());
+)
+app.use(flash())
 
 // Aplication Level Middleware
 app.use((req, res, next) => {
-  console.log("Time: ", Date.now());
-  next();
-});
+  console.log("Time: ", Date.now())
+  next()
+})
 
 app.get("/", (req, res) => {
   res.render("index", {
     layout: "layouts/main-layout",
-  });
-});
+  })
+})
 
 app.get("/about", (req, res) => {
   res.render("about", {
     layout: "layouts/main-layout",
-  });
-});
+  })
+})
 
-app.get("/contact", (req, res, next) => {
-  const contacts = loadContactData();
+app.get("/contact", async (req, res, next) => {
+  const contacts = await Contact.find()
 
   res.render("contact", {
     layout: "layouts/main-layout",
     contacts,
     info: req.flash("info"),
-  });
-});
+  })
+})
 
 app.get("/contact/add", (req, res) => {
   res.render("contact-add", {
     layout: "layouts/main-layout",
-  });
-});
+  })
+})
 
 app.post(
   "/contact",
   [
-    body("full-name").custom((value) => {
-      const duplicate = duplicateName(value);
+    body("full-name").custom(async (value) => {
+      const duplicate = await Contact.findOne({ name: value })
       if (duplicate) {
-        throw new Error("Name is already used!");
+        throw new Error("Name is already used!")
       }
 
-      return true;
+      return true
     }),
     check("email", "Email is not valid!").isEmail(),
     check("number", "Phone Number is not valid!").isMobilePhone("id-ID"),
   ],
   (req, res) => {
-    const errors = validationResult(req);
+    const errors = validationResult(req)
     if (!errors.isEmpty()) {
       return res.render("contact-add", {
         layout: "layouts/main-layout",
         errors: errors.array(),
-      });
+      })
     }
 
     const body = {
-      nama: `${req.body.fName} ${req.body.lName}`,
-      noHP: req.body.number,
+      name: `${req.body.fName} ${req.body.lName}`,
+      number: req.body.number,
       email: req.body.email,
-    };
+    }
 
-    addContact(body);
-    req.flash("info", "Data has been added.");
-    res.redirect("/contact");
+    Contact.insertMany(body).then(() => {
+      req.flash("info", "Data has been added.")
+      res.redirect("/contact")
+    })
   }
-);
+)
 
-app.get("/contact/delete/:nama", (req, res, next) => {
-  var name = req.params.nama;
+app.delete('/contact/delete', (req, res, next) => {
+  Contact.deleteOne({ _id: req.body.id }).then(() => {
+    req.flash("info", "Data has been deleted.")
+    res.redirect("/contact")
+  })
+})
 
-  const data = loadContactData();
-  const contacts = findContactByNama(data, name);
-
-  if (contacts) {
-    deleteContact(name);
-    req.flash("info", "Data has been deleted.");
-    res.redirect("/contact");
-  }
-
-  next();
-});
-
-app.get("/contact/edit/:nama", (req, res, next) => {
-  const contactsData = loadContactData();
-  const contacts = findContactByNama(contactsData, req.params.nama);
-
-  // Contacts not found
-  if (!contacts) next();
+app.get("/contact/edit/:id", async (req, res, next) => {
+  const contacts = await Contact.findOne({ _id: req.params.id })
+    .catch(() => {
+      // Contacts not found
+      next()
+    })
 
   res.render("edit", {
     layout: "layouts/main-layout",
     contacts,
-    fullName: contacts.nama.split(/[ ,]+/),
-  });
-});
+    fullName: contacts.name.split(/[ ,]+/),
+  })
+})
 
-app.post(
-  "/contact/update",
+app.put(
+  "/contact",
   [
-    body("fullName").custom((value) => {
-      const duplicate = duplicateName(value);
-      if (duplicate) {
-        throw new Error("Name is already used!");
+    body("fullName").custom(async (value, { req }) => {
+      const duplicate = await Contact.findOne({ name: value })
+      if (value !== req.body.oldName && duplicate) {
+        throw new Error("Name is already used!")
       }
 
-      return true;
+      return true
     }),
     check("email", "Email is not valid!").isEmail(),
-    check("noHP", "Phone Number is not valid!").isMobilePhone("id-ID"),
+    check("number", "Phone Number is not valid!").isMobilePhone("id-ID"),
   ],
-  (req, res, next) => {
-    const errors = validationResult(req);
+  async (req, res, next) => {
+    const errors = validationResult(req)
     if (req.body.fullName !== req.body.oldName) {
       if (!errors.isEmpty()) {
         return res.render("edit", {
@@ -159,43 +152,46 @@ app.post(
           contacts: req.body,
           fullName:
             req.body.oldName.split(/[ ,]+/) || req.body.fullName.split(/[ ,]+/),
-        });
+        })
       }
     }
 
     const body = {
-      oldName: req.body.oldName,
-      nama: `${req.body.fName} ${req.body.lName}`,
-      noHP: req.body.noHP,
+      name: `${req.body.fName} ${req.body.lName}`,
+      number: req.body.number,
       email: req.body.email,
-    };
+    }
 
-    updateContact(body);
-    req.flash("info", "Data has been updated.");
-    res.redirect("/contact");
+    Contact.updateOne(
+      { _id: req.body.id },
+      { $set: body },
+    ).then(() => {
+      req.flash("info", "Data has been updated.")
+      res.redirect("/contact")
+    })
   }
-);
+)
 
-app.get("/contact/:nama", (req, res, next) => {
-  const contactsData = loadContactData();
-  const contacts = findContactByNama(contactsData, req.params.nama);
-
-  // Contacts not found
-  if (!contacts) next();
+app.get("/contact/:id", async (req, res, next) => {
+  const contacts = await Contact.findOne({ _id: req.params.id })
+    .catch(() => {
+      // Contacts not found
+      next()
+    })
 
   res.render("detail", {
     layout: "layouts/main-layout",
     contacts,
-  });
-});
+  })
+})
 
 app.use("/", (req, res) => {
-  res.status(404);
+  res.status(404)
   res.render("404", {
     layout: false,
-  });
-});
+  })
+})
 
 app.listen(port, () => {
-  console.log(`Contact App listening on port ${port}`);
-});
+  console.log(`Contact App listening on port ${port}`)
+})
